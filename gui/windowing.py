@@ -244,50 +244,44 @@ class ChooserPopup (Gtk.Window):
         logger.debug("crossing: inside=%r", inside)
         # Grab the pointer if crossing from inside the popup to the
         # outside. Ungrab if doing the reverse.
+        seat = event.get_seat()
         if inside:
             self._ungrab_pointer_outside(
-                device = event.get_device(),
-                time = event.time,
+                seat = seat
             )
         else:
             self._grab_pointer_outside(
-                device = event.get_device(),
-                time = event.time,
+                seat = seat,
+                event = event
             )
 
-    def _grab_pointer_outside(self, device, time):
+    def _grab_pointer_outside(self, seat, event=None):
         if self._outside_grab_active:
             logger.warning("grab: outside-popup grab already active: "
                            "regrabbing")
-            self._ungrab_pointer_outside(device, time)
-        event_mask = (
-            Gdk.EventMask.POINTER_MOTION_MASK
-            | Gdk.EventMask.ENTER_NOTIFY_MASK
-            | Gdk.EventMask.LEAVE_NOTIFY_MASK
-            | Gdk.EventMask.BUTTON_PRESS_MASK
-            | Gdk.EventMask.BUTTON_RELEASE_MASK
-        )
+            self._ungrab_pointer_outside(seat)
         cursor = self._outside_cursor
-        grab_status = device.grab(
-            window = self.get_window(),
-            grab_ownership = Gdk.GrabOwnership.APPLICATION,
-            owner_events = False,
-            event_mask = Gdk.EventMask(event_mask),
-            cursor = cursor,
-            time_ = time,
+        grab_status = seat.grab(
+            window=self.get_window(),
+            capabilities=Gdk.SeatCapabilities.ALL_POINTING,
+            owner_events=False,
+            cursor=cursor,
+            event=event,
+            prepare_func=None,
+            prepare_func_data=None,
         )
         if grab_status == Gdk.GrabStatus.SUCCESS:
-            logger.debug("grab: acquired grab on %r successfully", device)
+            logger.debug("grab: acquired grab on %r successfully", seat)
             self._outside_grab_active = True
         else:
             logger.warning("grab: failed to acquire grab on %r (status=%s)",
-                           device, grab_status.value_nick)
+                           seat, grab_status.value_nick)
 
-    def _ungrab_pointer_outside(self, device, time):
+    def _ungrab_pointer_outside(self, seat):
         if not self._outside_grab_active:
             logger.debug("ungrab: outside-popup grab not active")
-        device.ungrab(time_=time)
-        logger.debug("ungrab: released grab on %r", device)
+        seat.ungrab()
+        logger.debug("ungrab: released grab on %r", seat)
         self._outside_grab_active = False
 
     def _configure_cb(self, widget, event):
@@ -382,7 +376,7 @@ class ChooserPopup (Gtk.Window):
                 self._do_initial_move()
         popup_info = None
         if event:
-            popup_info = (event.get_device(), event.time)
+            popup_info = (event, event.get_seat())
         self._popup_info = popup_info
         self.present()
 
@@ -410,10 +404,10 @@ class ChooserPopup (Gtk.Window):
         # if popped up next to a widget - the cursor counts as outside
         # initially.
         if self._popup_info:
-            device, time = self._popup_info
+            event, seat = self._popup_info
             self._grab_pointer_outside(
-                device = device,
-                time = time,
+                seat=seat,
+                event=event
             )
 
     def _hide_cb(self, widget):
@@ -589,7 +583,7 @@ class ChooserPopup (Gtk.Window):
         # release the grab so that the user can interact with the
         # window's contents.
         if inside and self._outside_grab_active:
-            self._ungrab_pointer_outside(event.get_device(), event.time)
+            self._ungrab_pointer_outside(event.get_seat())
 
         cursor = self._get_cursor(px, py)
         win.set_cursor(cursor)
